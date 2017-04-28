@@ -137,10 +137,17 @@ struct LocSizeSide
 public:
 	//base constructor does nothing
 	LocSizeSide()
-	{}
+	{
+		x = WIDTH/2;
+		y = HEIGHT/2;
+		w = 0;
+		h = 0;
+		side = FRONT;
+		score = 0.0;
+	}
 	
 	//constructor to allow for 
-	LocSizeSide(Rect rect, char Side, int Score)
+	LocSizeSide(Rect rect, char Side, float Score)
 	{
 		x = rect.x + (rect.width / 2); //x and y are set to middle
 		y = rect.y + (rect.height / 2);
@@ -150,7 +157,8 @@ public:
 		score = Score;
 	}
 
-	int x, y, w, h, score; //x and y are middle of pattern, not top left
+	int x, y, w, h; //x and y are middle of pattern, not top left
+	float score; 
 	char side;
 };
 
@@ -232,13 +240,16 @@ void cameraFeed(RaspiCam_Cv& camera, RingBuffer& buffer)
 	}
 }
 
-void classifier(Mat& img, vector<LocSizeSide>& detections, CascadeClassifier cascade, char side)
+void classifier(Mat& img, vector<LocSizeSide>& detections, CascadeClassifier cascade, char side, int filterStage&, LocSizeSide& previousDetection, int predictVector[4])
 {
 	// Create local detection vector
 	vector<Rect> localDetections;
 	// Create lock and defer
 	unique_lock<mutex> lk(classMtx, defer_lock);
 	
+	float detectionScore;
+	int differenceVector[4] = {};
+
 	while(running){
 		// Wait for classifier manager
 		lk.lock();
@@ -254,7 +265,23 @@ void classifier(Mat& img, vector<LocSizeSide>& detections, CascadeClassifier cas
 		
 		// Add patterns to main detection vector including side info via emplacement which moves Rect data into LocSizeSide wrapper
 		for(size_t i = 0; i < localDetections.size(); i++){
-			detections.emplace_back(localDetections[i], side);
+			switch(filterStage){
+				case 1:
+					detectionScore = abs(localDetections[j].x - previousDetection.x) + abs(localDetections[j].y - previousDetection.y) + abs(localDetections[j].w - previousDetection.w) + abs(localDetections[j].h - previousDetection.h);
+					break;
+				case 2:
+					differenceVector[0] = abs(localDetections[j].x - previousDetection.x);
+					differenceVector[1] = abs(localDetections[j].y - previousDetection.y);
+					differenceVector[2] = abs(localDetections[j].w - previousDetection.w);
+					differenceVector[3] = abs(localDetections[j].h - previousDetection.h);
+					detectionScore = abs(((float)differenceVector[0] - (float)predictVector[0])/(float)predictVector[0]) + abs(((float)differenceVector[1] - (float)predictVector[1])/(float)predictVector[1]) + abs(((float)differenceVector[2] - (float)predictVector[2])/(float)predictVector[2]) + abs(((float)differenceVector[3] - (float)predictVector[3])/(float)predictVector[3]);
+					break;
+				default:
+					detectionScore = 0.0;
+			}
+			detections.emplace_back(localDetections[i], side, detectionScore);
+			if(filterStage == 0)
+				break;
 		}
 		
 		// Increment classifiers finished and notify manager, once at 3
@@ -281,9 +308,7 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 	vector<LocSizeSide> detections;
 
 	LocSizeSide previousDetection;
-	float * differenceMagnitudes;
 	int predictVector[4] = {};
-	int differenceVector[4] = {};
 	int closestPatternIndex = 0;
 	int detectionStage = 0; //0: no detections found, 1: one detection found previously, 2: more than one found previously
 
@@ -310,9 +335,9 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 	//unique_lock<mutex> detectLk(detectionMtx, defer_lock);
 
 	// Currently just using back cascade on all 3
-	thread backClassifier(classifier, ref(img), ref(detections), backCascade, BACK);
-	thread frontClassifier(classifier, ref(img), ref(detections), frontCascade, FRONT);
-	//thread sideClassifier(classifier, ref(img), ref(detections), backCascade, SIDE);
+	thread backClassifier(classifier, ref(img), ref(detections), backCascade, BACK, detectionStage, ref(previousDetection), predictVector);
+	thread frontClassifier(classifier, ref(img), ref(detections), frontCascade, FRONT, detectionStage, ref(previousDetection), predictVector);
+	//thread sideClassifier(classifier, ref(img), ref(detections), backCascade, SIDE, detectionStage, ref(previousDetection), predictVector);
 	
 	// Wait for buffer to be filled
 	unique_lock<mutex> bufLk(bufMtx);
@@ -342,77 +367,32 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 		classCV.wait(classLk, []{return classificationDone;});
 		// ClassLk is reacquired after wait()
 
-		//Filter detections for most likely one
-		if(detections.size() == 1 && detectionStage == 0){
+		//Parse detections for lowest score
+		if(detection.empty()){
+			detectionStage = 0;
+			cout << "Zero" << endl;
+		}else if(detectionStage == 0){
 			detectionBeingFollowed = detections[0];
-			detectionStage = 1;
-		}else if(detections.size() == 1 && detectionStage != 0){
-			detectionBeingFollowed = detections[0];
-			predictVector[0] = detectionBeingFollowed.x - previousDetection.x;
-			predictVector[1] = detectionBeingFollowed.y - previousDetection.y;
-			predictVector[2] = detectionBeingFollowed.w - previousDetection.w;
-			predictVector[3] = detectionBeingFollowed.h - previousDetection.h;
-			detectionStage = (detectionStage == 1) ? 2 : 1;
-		}else if(detections.size() > 1 && detectionStage == 0){
-			//detectLk.lock();
-			//detectCV.wait(detectLk, [] {return !followPatternReading;});
-			detectionBeingFollowed = detections[0];
-			//newDetection = true;
-			//detectLk.unlock();
-			//detectCV.notify_all();
 			detectionStage = 1;
 			cout << "One" << endl;
-		}else if(detections.size() > 1 && detectionStage == 1){
-			closestPatternIndex = 0;
-			previousDetection = detectionBeingFollowed.getLast();
-			differenceMagnitudes = new float [detections.size()];
-			for(int j = 0; i < detections.size(); i++){
-				differenceMagnitudes[j] = abs(detections[j].x - previousDetection.x) + abs(detections[j].y - previousDetection.y) + abs(detections[j].w - previousDetection.w) + abs(detections[j].h - previousDetection.h);
-				if(differenceMagnitudes[j] < differenceMagnitudes[closestPatternIndex])
-					closestPatternIndex = j;
-			}
-			delete [] differenceMagnitudes;
-			//detectLk.lock();
-			//detectCV.wait(detectLk, [] {return !followPatternReading;});
-			detectionBeingFollowed = detections[closestPatternIndex];
-			//newDetection = true;
-			//detectLk.unlock();
-			//detectCV.notify_all();
-			predictVector[0] = detectionBeingFollowed.x - previousDetection.x;
-			predictVector[1] = detectionBeingFollowed.y - previousDetection.y;
-			predictVector[2] = detectionBeingFollowed.w - previousDetection.w;
-			predictVector[3] = detectionBeingFollowed.h - previousDetection.h;
-			detectionStage = 2;
-			cout << "Two" << endl;
-		}else if(detections.size() > 1 && detectionStage == 2){
-			closestPatternIndex = 0;
-			previousDetection = detectionBeingFollowed.getLast();
-			differenceMagnitudes = new float [detections.size()];
-			for(int j = 0; i < detections.size(); i++){
-				differenceVector[0] = detections[j].x - previousDetection.x;
-				differenceVector[1] = detections[j].y - previousDetection.y;
-				differenceVector[2] = detections[j].w - previousDetection.w;
-				differenceVector[3] = detections[j].h - previousDetection.h;
-				differenceMagnitudes[j] = abs((differenceVector[0] - predictVector[0])/predictVector[0]) + abs((differenceVector[1] - predictVector[1])/predictVector[1]) + abs((differenceVector[2] - predictVector[2])/predictVector[2]) + abs((differenceVector[3] - predictVector[3])/predictVector[3]);
-				if(differenceMagnitudes[j] < differenceMagnitudes[closestPatternIndex])
-					closestPatternIndex = j;
-			}
-			delete [] differenceMagnitudes;
-			//detectLk.lock();
-			//detectCV.wait(detectLk, [] {return !followPatternReading;});
-			detectionBeingFollowed = detections[closestPatternIndex];
-			//newDetection = true;
-			//detectLk.unlock();
-			//detectCV.notify_all();
-			predictVector[0] = detectionBeingFollowed.x - previousDetection.x;
-			predictVector[1] = detectionBeingFollowed.y - previousDetection.y;
-			predictVector[2] = detectionBeingFollowed.w - previousDetection.w;
-			predictVector[3] = detectionBeingFollowed.h - previousDetection.h;
-			cout << "Three" << endl;
 		}else{
-			detectionStage = 0;
-			//newDetection = false;
-			cout << "Zero" << endl;
+			closestPatternIndex = 0;
+
+			previousDetection = detectionBeingFollowed.getLast();
+
+			for(int j = 1; i < detections.size(); i++){
+				if(detections[j].score < detections[closestPatternIndex].score)
+					closestPatternIndex = j;
+			}
+
+			detectionBeingFollowed = detections[0];
+
+			predictVector[0] = detectionBeingFollowed.x - previousDetection.x;
+			predictVector[1] = detectionBeingFollowed.y - previousDetection.y;
+			predictVector[2] = detectionBeingFollowed.w - previousDetection.w;
+			predictVector[3] = detectionBeingFollowed.h - previousDetection.h;
+			
+			detectionStage = 2;
 		}
 
 		detections.clear();
