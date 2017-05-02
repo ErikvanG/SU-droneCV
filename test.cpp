@@ -18,6 +18,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <chrono>
+#include </home/pi/MAVLink/ardupilotmega/mavlink.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,7 +58,7 @@ static const char FRONT = 'f';
 static const char SIDE = 's';
 static const char NUM_PATTERNS = 2;
 static const int FRAMES = 1000;
-static const int DEFAULT_PORT = 14550;	// ArduPilot port
+static const int DEFAULT_PORT = 14552;	// ArduPilot port
 static const int BUFFER_SIZE = 2048;
 static const int DEADZONE_LEFT_BOUND = 288;
 static const int DEADZONE_RIGHT_BOUND = 352;
@@ -65,7 +66,19 @@ static const int DEADZONE_NEAR_BOUND = 40; //Totally made up at the moment
 static const int DEADZONE_FAR_BOUND = 10; //Totally made up 
 static const int DEG_LONGITUDE_ONE_METER = 90; //Degrees * 10^-7
 static const int DEG_LATITUDE_ONE_METER = 133; //Degrees * 10^-7
-static const int METERS_PER_WAYPOINT = 2;
+static const int METERS_PER_WAYPOINT = 10;
+
+
+const uint8_t CC_SYSID = 32;
+const uint8_t CC_COMPID = 1;
+const uint8_t TARGET_ID = 1;	
+const uint32_t DEFAULT_TIMESTAMP = 0;
+const int32_t DEFAULT_LATITUDE = 0;
+const int32_t DEFAULT_LONGITUDE = 0;
+const float DEFAULT_ALTITUDE = 0;
+const float DEFAULT_HEADING = 0;
+const uint16_t ENABLE_POSITION_BITS = 0b0000111111111000;
+const uint8_t NO_MODE = 0b00000000;
 
 static const string backCascadeName = "/home/pi/seniordesign/classifiers/backCascade/cascade.xml";
 static const string frontCascadeName = "/home/pi/seniordesign/classifiers/frontCascade/cascade.xml";
@@ -140,17 +153,16 @@ public:
 	{}
 	
 	//constructor to allow for 
-	LocSizeSide(Rect rect, char Side, int Score)
+	LocSizeSide(Rect rect, char Side)
 	{
 		x = rect.x + (rect.width / 2); //x and y are set to middle
 		y = rect.y + (rect.height / 2);
 		w = rect.width;
 		h = rect.height;
 		side = Side;
-		score = Score;
 	}
 
-	int x, y, w, h, score; //x and y are middle of pattern, not top left
+	int x, y, w, h; //x and y are middle of pattern, not top left
 	char side;
 };
 
@@ -348,10 +360,10 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 			detectionStage = 1;
 		}else if(detections.size() == 1 && detectionStage != 0){
 			detectionBeingFollowed = detections[0];
-			predictVector[0] = detectionBeingFollowed.x - previousDetection.x;
-			predictVector[1] = detectionBeingFollowed.y - previousDetection.y;
-			predictVector[2] = detectionBeingFollowed.w - previousDetection.w;
-			predictVector[3] = detectionBeingFollowed.h - previousDetection.h;
+			predictVector[0] = detections[0].x - previousDetection.x;
+			predictVector[1] = detections[0].y - previousDetection.y;
+			predictVector[2] = detections[0].w - previousDetection.w;
+			predictVector[3] = detections[0].h - previousDetection.h;
 			detectionStage = (detectionStage == 1) ? 2 : 1;
 		}else if(detections.size() > 1 && detectionStage == 0){
 			//detectLk.lock();
@@ -378,10 +390,10 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 			//newDetection = true;
 			//detectLk.unlock();
 			//detectCV.notify_all();
-			predictVector[0] = detectionBeingFollowed.x - previousDetection.x;
-			predictVector[1] = detectionBeingFollowed.y - previousDetection.y;
-			predictVector[2] = detectionBeingFollowed.w - previousDetection.w;
-			predictVector[3] = detectionBeingFollowed.h - previousDetection.h;
+			predictVector[0] = detections[closestPatternIndex].x - previousDetection.x;
+			predictVector[1] = detections[closestPatternIndex].y - previousDetection.y;
+			predictVector[2] = detections[closestPatternIndex].w - previousDetection.w;
+			predictVector[3] = detections[closestPatternIndex].h - previousDetection.h;
 			detectionStage = 2;
 			cout << "Two" << endl;
 		}else if(detections.size() > 1 && detectionStage == 2){
@@ -404,10 +416,10 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 			//newDetection = true;
 			//detectLk.unlock();
 			//detectCV.notify_all();
-			predictVector[0] = detectionBeingFollowed.x - previousDetection.x;
-			predictVector[1] = detectionBeingFollowed.y - previousDetection.y;
-			predictVector[2] = detectionBeingFollowed.w - previousDetection.w;
-			predictVector[3] = detectionBeingFollowed.h - previousDetection.h;
+			predictVector[0] = detections[closestPatternIndex].x - previousDetection.x;
+			predictVector[1] = detections[closestPatternIndex].y - previousDetection.y;
+			predictVector[2] = detections[closestPatternIndex].w - previousDetection.w;
+			predictVector[3] = detections[closestPatternIndex].h - previousDetection.h;
 			cout << "Three" << endl;
 		}else{
 			detectionStage = 0;
@@ -453,10 +465,22 @@ void udp_server(DetectionBuffer& detection)
 	socklen_t addrLen = sizeof(clientAddr);		// length of addresses
 	int recvlen;					// bytes received
 	unsigned char buffer[BUFFER_SIZE];		// receive buffer
-	bool validMessage = false;			// bool to check for if a valid message was received
-	char* send_message = "test";
-	  
-	int heading = -1;
+	
+	mavlink_message_t msg;
+	mavlink_status_t status;		
+	uint8_t parser;	
+	
+	uint16_t send_length;
+	
+	uint8_t flight_mode = 0b00000000;
+	
+	uint32_t timestamp = DEFAULT_TIMESTAMP;
+	uint32_t current_lat = DEFAULT_LATITUDE;
+	uint32_t current_lon = DEFAULT_LONGITUDE;
+	float current_alt = DEFAULT_ALTITUDE;	
+	float current_hdg = DEFAULT_HEADING;		
+	
+	float heading = -1;
 
 	//unique_lock<mutex> detectLk(detectionMtx, defer_lock);
 	LocSizeSide detectionToFollow;
@@ -489,94 +513,166 @@ void udp_server(DetectionBuffer& detection)
 		exit(-1);
 	}	
 	
-	// Main loop to receive/send data with clients
-	while(!validMessage){
-		printf("Waiting on port %d\n", servPort);
-		recvlen = recvfrom(sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&clientAddr, &addrLen);
-		printf("Received %d bytes.\n", recvlen);
+	while(1){
+		// printf("Waiting on port %d\n", servPort);
+		recvlen = recvfrom(sock, buffer, MAVLINK_MAX_PACKET_LEN, 0, (struct sockaddr *)&clientAddr, &addrLen);
+		// printf("Received %d bytes.\n", recvlen);
 		if(recvlen > 0){
 			buffer[recvlen] = 0;
-			printf("Received message: '%s'\n", buffer);
-			validMessage = true;
-		}
-	}
-	
-	while(1){
-		// Send MAVLink commands
-		//detectLk.lock();
-		//detectCV.wait(detectLk, [] {return newDetection;});
-		//followPatternReading = true;
-		detectionToFollow = detection.getLast();
-		//followPatternReading = false;
-		//newDetection = false;
-		//detectCV.notify_all();
+			
+			for(int i=0; i < recvlen; i++){
+				parser = buffer[i];
+				
+ 				if(mavlink_parse_char(MAVLINK_COMM_0, parser, &msg, &status)){
+					// cout << "DEBUG msgid: " << msg.msgid << endl;
+					switch(msg.msgid){
+						case MAVLINK_MSG_ID_HEARTBEAT:
+							mavlink_heartbeat_t hb;
+							mavlink_msg_heartbeat_decode(&msg, &hb);
+							
+							flight_mode = hb.base_mode;
+							
+							#ifdef MSG_DEBUG
+								cout << endl;
+								cout << ">> Heartbeat Message Received:" << endl;
+								cout << "custom_mode: " << (int) hb.custom_mode << endl;
+								cout << "Type: " << (int) hb.autopilot << endl;
+								cout << "base_mode: " << (int) hb.base_mode << endl;
+								cout << "system_status: " << (int) hb.system_status << endl;
+								cout << "mavlink_version: " << (int) hb.mavlink_version << endl;
+								cout << endl;
+							#endif
+							break;
 
-		if(detectionToFollow.x < DEADZONE_LEFT_BOUND){
-			if(detectionToFollow.w < DEADZONE_FAR_BOUND){
-				//move left and forward
-				cout << "move left and forward";
-				heading = 31500;
-			}else if(detectionToFollow.w > DEADZONE_NEAR_BOUND){
-				//move left and backwards
-				cout << "move left and backwards";
-				heading = 22500;
-				//set heading to 225
-			}else{
-				//move left
-				cout << "move left";
-				heading = 27000;
-				//set heading to 270
+						case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
+							mavlink_global_position_int_t gpi_status;
+							mavlink_msg_global_position_int_decode(&msg, &gpi_status);
+							
+							// Noting GPI status and converting current position to floats
+							timestamp = gpi_status.time_boot_ms;
+							current_lat = gpi_status.lat;
+							current_lon = gpi_status.lon;
+							current_alt = ((float) gpi_status.relative_alt)/1000;	// millimeters --> meters
+							current_hdg = ((float) gpi_status.hdg)/100;				// 1E2 --> degrees
+							
+							#ifdef MSG_DEBUG
+								cout << endl;
+								cout << ">> Global Position Message Received:" << endl;
+								cout << "Timestamp: " << gpi_status.time_boot_ms << endl;
+								cout << "Latitude: " << (float) ((float) gpi_status.lat)/10000000 << endl;
+								cout << "Longitude: " << (float) ((float) gpi_status.lon)/10000000 << endl;
+								cout << "Altitude: " << gpi_status.alt << endl;
+								cout << "Relative Altitude: " << (float) ((float) gpi_status.relative_alt)/1000 << endl;
+								cout << "Ground Velocity (X): " << gpi_status.vx << endl;
+								cout << "Ground Velocity (Y): " << gpi_status.vy << endl;
+								cout << "Ground Velocity (Z): " << gpi_status.vz << endl;
+								cout << "Vehicle heading (Yaw): " << current_hdg << endl;
+								cout << endl;
+							#endif
+							break;
+							
+						// default:
+							// cout << endl << ">> Received unsupported message." << endl << endl;
+					}
+				}
 			}
-		}else if(detectionToFollow.x > DEADZONE_RIGHT_BOUND){
-			if(detectionToFollow.w < DEADZONE_FAR_BOUND){
-				//move right and forward
-				cout << "move right and forward";
-				//set heading to 45
-				heading = 4500;
-			}else if(detectionToFollow.w > DEADZONE_NEAR_BOUND){
-				//move right and backwards
-				cout << "move right and backwards";
-				//set heading to 135
-				heading = 13000;
-			}else{
-				//move right
-				cout << "move right";
-				//set heading to 90
-				heading = 9000;
+			// printf("\nReceived message: '%s'\n", buffer);
+			
+			if(timestamp == DEFAULT_TIMESTAMP){
+			
+				// Request Data Stream Command:
+				 uint8_t stream_id = 0;			// See MAV_DATA_STREAM ENUM (supposedly, maybe not supported in ardupilot)
+				 uint16_t request_rate = 1;		// Rate to send message per second
+				 int32_t interval_microseconds = 100000;
+				mavlink_msg_request_data_stream_pack(CC_SYSID, CC_COMPID, &msg, TARGET_ID, MAV_COMP_ID_ALL, stream_id, request_rate, 1);
+				
+				// Sending the MAVLink message to buffer and then over UDP protocol to client
+				 send_length = mavlink_msg_to_send_buffer(buffer, &msg);
+				 sendto(sock, buffer, MAVLINK_MAX_PACKET_LEN, 0, (struct sockaddr *)&clientAddr, addrLen);
+				// cout << "request sent" << endl;	
 			}
-		}else{
-			if(detectionToFollow.w < DEADZONE_FAR_BOUND){
-				//move forward
-				cout << "move forward";
-				//set heading to 0
-				heading = 0;
-			}else if(detectionToFollow.w > DEADZONE_NEAR_BOUND){
-				//move backwards
-				cout << "move backwards";
-				//set heading to 180
-				heading = 18000;
+			
+			// Send MAVLink commands
+			//detectLk.lock();
+			//detectCV.wait(detectLk, [] {return newDetection;});
+			//followPatternReading = true;
+			detectionToFollow = detection.getLast();
+			//followPatternReading = false;
+			//newDetection = false;
+			//detectCV.notify_all();
+			
+			uint8_t confirmation = 1;
+			uint32_t desired_lat = current_lat;
+			uint32_t desired_lon = current_lon;
+			float desired_alt = current_alt;
+
+			if(detectionToFollow.x < DEADZONE_LEFT_BOUND){
+				if(detectionToFollow.w < DEADZONE_FAR_BOUND){
+					//move left and forward
+					//cout << "move left and forward";
+					heading = 315;
+				}else if(detectionToFollow.w > DEADZONE_NEAR_BOUND){
+					//move left and backwards
+					//cout << "move left and backwards";
+					heading = 225;
+					//set heading to 225
+				}else{
+					//move left
+					//cout << "move left";
+					heading = 270;
+					//set heading to 270
+				}
+			}else if(detectionToFollow.x > DEADZONE_RIGHT_BOUND){
+				if(detectionToFollow.w < DEADZONE_FAR_BOUND){
+					//move right and forward
+					//cout << "move right and forward";
+					//set heading to 45
+					heading = 45;
+				}else if(detectionToFollow.w > DEADZONE_NEAR_BOUND){
+					//move right and backwards
+					//cout << "move right and backwards";
+					//set heading to 135
+					heading = 135;
+				}else{
+					//move right
+					//cout << "move right";
+					//set heading to 90
+					heading = 90;
+				}
 			}else{
-				//nothing
-				cout << "stay still";
-				//set heading to -1
-				heading = -1;
+				if(detectionToFollow.w < DEADZONE_FAR_BOUND){
+					//move forward
+					//cout << "move forward";
+					//set heading to 0
+					heading = 0;
+				}else if(detectionToFollow.w > DEADZONE_NEAR_BOUND){
+					//move backwards
+					//cout << "move backwards";
+					//set heading to 180
+					heading = 180;
+				}else{
+					//nothing
+					cout << "stay still";
+					//set heading to -1
+					heading = -1;
+				}
 			}
+
+			if(heading >= 0){
+				//waypoint is current longitude+sin(yaw + heading / 10000) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER, current lattitude+cos(yaw + heading / 10000) * METERS_PER_WAYPOINT * DEG_LATITUDE_ONE_METER
+				desired_lon = current_lon+sin(current_hdg + heading) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER;
+				desired_lat = current_lat+cos(current_hdg + heading) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER;
+				mavlink_msg_set_position_target_global_int_pack(CC_SYSID, CC_COMPID, &msg, timestamp,
+					TARGET_ID, MAV_COMP_ID_ALL, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, ENABLE_POSITION_BITS,
+					desired_lat, desired_lon, desired_alt, 0, 0, 0, 0, 0, 0, 0, 0);
+				send_length = mavlink_msg_to_send_buffer(buffer, &msg);
+				sendto(sock, buffer, MAVLINK_MAX_PACKET_LEN, 0, (struct sockaddr *)&clientAddr, addrLen);
+				// cout << "Message sent, desired alt: " << desired_alt << endl;						
+			}
+			this_thread::sleep_for(milliseconds(10));
 		}
-
-		switch(heading){
-			case -1:
-				//waypoint is where drone is
-				break;
-
-			default:
-				//waypoint is current longitude-sin(yaw + heading / 1000) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER, current lattitude+cos(yaw + heading / 1000) * METERS_PER_WAYPOINT * DEG_LATITUDE_ONE_METER
-		}
-		this_thread::sleep_for(milliseconds(10));
-		// Send function
-		sendto(sock, send_message, strlen(send_message), 0, (struct sockaddr *)&clientAddr, addrLen);
-	}
-
-	 close(sock);	
+	}	
+	close(sock);	
 }
 
 int main()
