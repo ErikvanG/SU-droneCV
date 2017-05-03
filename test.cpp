@@ -79,6 +79,10 @@ const float DEFAULT_ALTITUDE = 0;
 const float DEFAULT_HEADING = 0;
 const uint16_t ENABLE_POSITION_BITS = 0b0000111111111000;
 const uint8_t NO_MODE = 0b00000000;
+const int ABSOLUTE_HDG = 0;
+const int RELATIVE_HDG = 1;
+const int CLOCKWISE = 1;
+const int COUNTER_CLOCKWISE = -1;
 
 static const string backCascadeName = "/home/pi/seniordesign/classifiers/backCascade/cascade.xml";
 static const string frontCascadeName = "/home/pi/seniordesign/classifiers/frontCascade/cascade.xml";
@@ -604,8 +608,10 @@ void udp_server(DetectionBuffer& detection, int& detectionStage)
 			uint8_t confirmation = 1;
 			uint32_t desired_lat = current_lat;
 			uint32_t desired_lon = current_lon;
+			
 			float desired_alt = current_alt;
-
+			float desired_hdg = current_hdg;
+			
 			if(detectionToFollow.x < DEADZONE_LEFT_BOUND){
 				if(detectionToFollow.w < DEADZONE_FAR_BOUND){
 					//move left and forward
@@ -664,10 +670,15 @@ void udp_server(DetectionBuffer& detection, int& detectionStage)
 				desired_lat = current_lat+cos(current_hdg + heading) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER;
 				mavlink_msg_set_position_target_global_int_pack(CC_SYSID, CC_COMPID, &msg, timestamp,
 					TARGET_ID, MAV_COMP_ID_ALL, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, ENABLE_POSITION_BITS,
-					desired_lat, desired_lon, desired_alt, 0, 0, 0, 0, 0, 0, 0, 0);
+					desired_lat, desired_lon, desired_alt, 0, 0, 0, 0, 0, 0, 0, 0);				
 				send_length = mavlink_msg_to_send_buffer(buffer, &msg);
 				sendto(sock, buffer, MAVLINK_MAX_PACKET_LEN, 0, (struct sockaddr *)&clientAddr, addrLen);
-				// cout << "Message sent, desired alt: " << desired_alt << endl;						
+				// cout << "Message sent, desired alt: " << desired_alt << endl;		
+				
+				mavlink_msg_command_long_pack(CC_SYSID, CC_COMPID, &msg, TARGET_ID, MAV_COMP_ID_ALL, MAV_CMD_CONDITION_YAW, confirmation, desired_hdg,
+					0, CLOCKWISE, ABSOLUTE_HDG, 0, 0, 0);		
+				send_length = mavlink_msg_to_send_buffer(buffer, &msg);
+				sendto(sock, buffer, MAVLINK_MAX_PACKET_LEN, 0, (struct sockaddr *)&clientAddr, addrLen);					
 			}
 			this_thread::sleep_for(milliseconds(10));
 		}
