@@ -282,7 +282,7 @@ void classifier(Mat& img, vector<LocSizeSide>& detections, CascadeClassifier cas
 	
 }
 
-void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollowed)
+void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollowed, int &detectionStage)
 {
 	Mat img;
 	
@@ -297,7 +297,7 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 	int predictVector[4] = {};
 	int differenceVector[4] = {};
 	int closestPatternIndex = 0;
-	int detectionStage = 0; //0: no detections found, 1: one detection found previously, 2: more than one found previously
+	 //0: no detections found, 1: one detection found previously, 2: more than one found previously
 
 	if(!backCascade.load(backCascadeName)){
 		running = false;
@@ -456,7 +456,7 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 	
 }
 
-void udp_server(DetectionBuffer& detection)
+void udp_server(DetectionBuffer& detection, int& detectionStage)
 {
 	int sock;					// socket id
 	unsigned short servPort;			// port number
@@ -658,7 +658,7 @@ void udp_server(DetectionBuffer& detection)
 				}
 			}
 
-			if(heading >= 0){
+			if(heading >= 0 && detectionStage != 0){
 				//waypoint is current longitude+sin(yaw + heading / 10000) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER, current lattitude+cos(yaw + heading / 10000) * METERS_PER_WAYPOINT * DEG_LATITUDE_ONE_METER
 				desired_lon = current_lon+sin(current_hdg + heading) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER;
 				desired_lat = current_lat+cos(current_hdg + heading) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER;
@@ -689,11 +689,13 @@ int main()
 	camera.set(CV_CAP_PROP_FRAME_HEIGHT, HEIGHT); // Set height
 	camera.open();
 	
+	int detectionStage = 0;
+	
 	// Initialize threads
 	running = true;
 	thread cam(cameraFeed, ref(camera), ref(imgBuffer));
-	thread classMngr(classifierManager, ref(imgBuffer), ref(detectionToFollow));
-	thread mavlinkServer(udp_server, ref(detectionToFollow));
+	thread classMngr(classifierManager, ref(imgBuffer), ref(detectionToFollow), detectionStage);
+	thread mavlinkServer(udp_server, ref(detectionToFollow), detectionStage);
 
 	// Exit camera feed and classifier manager
 	cam.join();
