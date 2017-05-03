@@ -153,16 +153,18 @@ public:
 	{}
 	
 	//constructor to allow for 
-	LocSizeSide(Rect rect, char Side)
+	LocSizeSide(Rect rect, char Side, float Score)
 	{
 		x = rect.x + (rect.width / 2); //x and y are set to middle
 		y = rect.y + (rect.height / 2);
 		w = rect.width;
 		h = rect.height;
 		side = Side;
+		score = Score;
 	}
 
 	int x, y, w, h; //x and y are middle of pattern, not top left
+	float score;
 	char side;
 };
 
@@ -371,7 +373,7 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 		// ClassLk is reacquired after wait()
 
 		//Parse detections for lowest score
-		if(detection.empty()){
+		if(detections.empty()){
 			detectionStage = 0;
 			cout << "Zero" << endl;
 		}else if(detectionStage == 0){
