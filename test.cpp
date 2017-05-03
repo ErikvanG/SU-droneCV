@@ -273,13 +273,13 @@ void classifier(Mat& img, vector<LocSizeSide>& detections, CascadeClassifier cas
 		for(size_t i = 0; i < localDetections.size(); i++){
 			switch(filterStage){
 				case 1:
-					detectionScore = abs(localDetections[i].x - previousDetection.x) + abs(localDetections[i].y - previousDetection.y) + abs(localDetections[i].w - previousDetection.w) + abs(localDetections[i].h - previousDetection.h);
+					detectionScore = abs(localDetections[i].x - previousDetection.x) + abs(localDetections[i].y - previousDetection.y) + abs(localDetections[i].width - previousDetection.w) + abs(localDetections[i].height - previousDetection.h);
 					break;
 				case 2:
 					differenceVector[0] = abs(localDetections[i].x - previousDetection.x);
 					differenceVector[1] = abs(localDetections[i].y - previousDetection.y);
-					differenceVector[2] = abs(localDetections[i].w - previousDetection.w);
-					differenceVector[3] = abs(localDetections[i].h - previousDetection.h);
+					differenceVector[2] = abs(localDetections[i].width - previousDetection.w);
+					differenceVector[3] = abs(localDetections[i].height - previousDetection.h);
 					detectionScore = abs(((float)differenceVector[0] - (float)predictVector[0])/(float)predictVector[0]) + abs(((float)differenceVector[1] - (float)predictVector[1])/(float)predictVector[1]) + abs(((float)differenceVector[2] - (float)predictVector[2])/(float)predictVector[2]) + abs(((float)differenceVector[3] - (float)predictVector[3])/(float)predictVector[3]);
 					break;
 				default:
