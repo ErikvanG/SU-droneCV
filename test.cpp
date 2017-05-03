@@ -388,12 +388,12 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 					closestPatternIndex = j;
 			}
 
-			detectionBeingFollowed = detections[0];
+			detectionBeingFollowed = detections[j];
 
-			predictVector[0] = detectionBeingFollowed.x - previousDetection.x;
-			predictVector[1] = detectionBeingFollowed.y - previousDetection.y;
-			predictVector[2] = detectionBeingFollowed.w - previousDetection.w;
-			predictVector[3] = detectionBeingFollowed.h - previousDetection.h;
+			predictVector[0] = detections[j].x - previousDetection.x;
+			predictVector[1] = detections[j].y - previousDetection.y;
+			predictVector[2] = detections[j].w - previousDetection.w;
+			predictVector[3] = detections[j].h - previousDetection.h;
 			
 			detectionStage = 2;
 		}
@@ -665,8 +665,8 @@ int main()
 	// Initialize threads
 	running = true;
 	thread cam(cameraFeed, ref(camera), ref(imgBuffer));
-	thread classMngr(classifierManager, ref(imgBuffer), ref(detectionToFollow), detectionStage);
-	thread mavlinkServer(udp_server, ref(detectionToFollow), detectionStage);
+	thread classMngr(classifierManager, ref(imgBuffer), ref(detectionToFollow), ref(detectionStage));
+	thread mavlinkServer(udp_server, ref(detectionToFollow), ref(detectionStage));
 
 	// Exit camera feed and classifier manager
 	cam.join();
