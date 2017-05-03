@@ -388,12 +388,12 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 					closestPatternIndex = j;
 			}
 
-			detectionBeingFollowed = detections[j];
+			detectionBeingFollowed = detections[closestPatternIndex];
 
-			predictVector[0] = detections[j].x - previousDetection.x;
-			predictVector[1] = detections[j].y - previousDetection.y;
-			predictVector[2] = detections[j].w - previousDetection.w;
-			predictVector[3] = detections[j].h - previousDetection.h;
+			predictVector[0] = detections[closestPatternIndex].x - previousDetection.x;
+			predictVector[1] = detections[closestPatternIndex].y - previousDetection.y;
+			predictVector[2] = detections[closestPatternIndex].w - previousDetection.w;
+			predictVector[3] = detections[closestPatternIndex].h - previousDetection.h;
 			
 			detectionStage = 2;
 		}
