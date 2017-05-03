@@ -338,9 +338,9 @@ void classifierManager(RingBuffer& buffer, DetectionBuffer& detectionBeingFollow
 	//unique_lock<mutex> detectLk(detectionMtx, defer_lock);
 
 	// Currently just using back cascade on all 3
-	thread backClassifier(classifier, ref(img), ref(detections), backCascade, BACK, detectionStage, ref(previousDetection), predictVector);
-	thread frontClassifier(classifier, ref(img), ref(detections), frontCascade, FRONT, detectionStage, ref(previousDetection), predictVector);
-	//thread sideClassifier(classifier, ref(img), ref(detections), backCascade, SIDE, detectionStage, ref(previousDetection), predictVector);
+	thread backClassifier(classifier, ref(img), ref(detections), backCascade, BACK, ref(detectionStage), ref(previousDetection), ref(predictVector));
+	thread frontClassifier(classifier, ref(img), ref(detections), frontCascade, FRONT, ref(detectionStage), ref(previousDetection), ref(predictVector));
+	//thread sideClassifier(classifier, ref(img), ref(detections), backCascade, SIDE, ref(detectionStage), ref(previousDetection), ref(predictVector));
 	
 	// Wait for buffer to be filled
 	unique_lock<mutex> bufLk(bufMtx);
