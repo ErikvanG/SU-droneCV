@@ -631,7 +631,7 @@ void udp_server(DetectionBuffer& detection, int& detectionStage)
 				}
 			}
 
-			if(heading >= 0 && detectionStage != 0){
+			if(heading >= 0 && detectionStage >= 2){
 				//waypoint is current longitude+sin(yaw + heading / 10000) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER, current lattitude+cos(yaw + heading / 10000) * METERS_PER_WAYPOINT * DEG_LATITUDE_ONE_METER
 				desired_lon = current_lon+sin(current_hdg + heading) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER;
 				desired_lat = current_lat+cos(current_hdg + heading) * METERS_PER_WAYPOINT * DEG_LONGITUDE_ONE_METER;
